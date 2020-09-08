@@ -1,0 +1,235 @@
+#! /usr/bin/env python3
+# -*- coding: utf-8 -*-
+'''
+Author   : alex
+Created  : 2020-09-04 15:31:29
+Modified : 2020-09-07 10:11:01
+
+Comments :
+'''
+
+# %% Imports
+
+import argparse
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.dates as md
+import datetime as dt
+import h5py as hd
+from pathlib import Path
+
+# %% Settings
+# - paths
+ROOT = Path('.')
+LOG_DIR = ROOT / 'logs'
+FILE_NAME_FMT = '%Y-%m-%d'
+FILE_EXT = '.hdf5'
+
+# - channels
+CHANNEL_LIST = {1: 'Climatisation',
+                2: 'Jonction froide-2',
+                3: 'Watercooling input (internal circuit)',
+                4: 'Large Zeeman (input)',
+                5: 'Large Zeeman (output)',
+                6: 'Source'}
+
+CHANNEL_HELP = '> List of of available channels : \n'
+for key, name in CHANNEL_LIST.items():
+    CHANNEL_HELP += ' + %i : %s \n' % (key, name)
+
+# %% Argument parser
+DESCRIPTION_STRING = ''' Plots the temperature logs from the Helium experiment.
+                         (Author : A. Dareau)
+                     '''
+
+parser = argparse.ArgumentParser(description=DESCRIPTION_STRING)
+
+# - date range
+group = parser.add_mutually_exclusive_group()
+group.add_argument("-w", "--week", action="store_true", help='last week (default)')
+group.add_argument("-m", "--month", action="store_true", help='last month')
+group.add_argument("-y", "--year", action="store_true", help='last year')
+group.add_argument("-a", "--all", action="store_true", help='show all logs')
+
+# - choose channels
+CHANNELS_HELP_LIST = '''choose channels to plot, using their numbers separated
+                        by spaces. Use the -l option to get the list of
+                        available channels
+                     '''
+parser.add_argument("-c", "--channels", nargs='+', type=int, default=[1, 2, 3],
+                    help=CHANNELS_HELP_LIST, choices=list(CHANNEL_LIST.keys()))
+
+
+# - help
+parser.add_argument("-l", "--list", action="store_true",
+                    help="list available channels")
+
+# - parse and analyse
+args = parser.parse_args()
+
+# - get date range
+# showing last : w = week / m = month / y = year / a = all
+if args.month:
+    DATE_RANGE = 'm'
+elif args.year:
+    DATE_RANGE = 'y'
+elif args.all:
+    DATE_RANGE = 'a'
+else:
+    DATE_RANGE = 'w'
+
+# - get channels
+CHANNELS_TO_PLOT = [CHANNEL_LIST[i] for i in args.channels]
+
+# - other
+SHOW_CHANNEL_LIST = args.list
+
+# %% Functions
+
+
+def list_log_files():
+    global LOG_DIR, FILE_NAME_FMT, FILE_EXT, DATE_RANGE
+
+    # - handle date range
+    today = dt.datetime.today()
+    if DATE_RANGE == 'w':
+        start_date = today - dt.timedelta(days=7)
+    elif DATE_RANGE == 'm':
+        start_date = today - dt.timedelta(days=31)
+    elif DATE_RANGE == 'y':
+        start_date = today - dt.timedelta(years=365)
+    else:
+        start_date = dt.datetime(1970, 1, 1)
+
+    # - list files
+    logfile_list = []
+    for lfile in LOG_DIR.glob('*%s' % FILE_EXT):
+        lfile_date = dt.datetime.strptime(lfile.name, FILE_NAME_FMT + FILE_EXT)
+        if lfile_date > start_date:
+            logfile_list.append(lfile)
+
+    return logfile_list
+
+
+def read_log_file(lfile):
+    global CHANNELS_TO_PLOT, DATE_RANGE
+
+    # - open log file
+    hdfile = hd.File(lfile, 'r')
+
+    # - read and process data
+    data_dic = {}
+    for chan in CHANNELS_TO_PLOT:
+        # get data
+        data = hdfile[chan]
+        temp = np.array(data)
+        # find start time and sampling interval
+        start = data.attrs['start'][0]
+        interval = data.attrs['interval'][0]
+        timestamps = start + np.arange(len(data)) * interval
+        dates = np.array([dt.datetime.fromtimestamp(t) for t in timestamps])
+        # remove nan
+        i_not_nan = ~np.isnan(temp)
+        temp = temp[i_not_nan]
+        dates = dates[i_not_nan]
+        # reduce sampling size
+        if DATE_RANGE == 'w':
+            ntrim = 60  # 1min / point
+        elif DATE_RANGE == 'm':
+            ntrim = 600  # 10min / point
+        elif DATE_RANGE == 'y':
+            ntrim = 3600  # 1 hour / point
+        else:
+            ntrim = 3600
+        dates = dates[::ntrim]
+        temp = temp[::ntrim]
+        # store results
+        data_dic[chan] = {'temp': temp,  # temperature
+                          'date': dates}
+    return data_dic
+
+
+def read_all_files(logfile_list):
+    global CHANNELS_TO_PLOT
+    # - prepare output dictionnary
+    data = {chan: {'temp': [], 'date': []} for chan in CHANNELS_TO_PLOT}
+    # - read files
+    for i, lfile in enumerate(logfile_list):
+        print('  + process file %i / %i' % (i+1, len(logfile_list)))
+        # read data
+        new_data = read_log_file(lfile)
+        # add to dictionnary
+        for chan in CHANNELS_TO_PLOT:
+            for key in ['temp', 'date']:
+                data[chan][key] = np.concatenate((data[chan][key],
+                                                  new_data[chan][key]))
+    return data
+
+
+def plot_data(data):
+    global DATE_RANGE
+    # - figure setup
+    nrows = len(data)
+    fig, axes = plt.subplots(nrows=nrows, constrained_layout=True)
+    if nrows == 1:
+        axes = [axes, ]
+
+    # - plot
+    if DATE_RANGE == "w":
+        xfmt = md.DateFormatter('%m-%Y')
+        major = md.DayLocator()
+        minor = md.HourLocator()
+    elif DATE_RANGE == 'm':
+        xfmt = md.DateFormatter('%d-%m')
+        major = md.DayLocator()
+        minor = md.DayLocator()
+    else:
+        xfmt = md.DateFormatter('%m-%Y')
+        major = md.MonthLocator()
+        minor = md.DayLocator()
+
+    for chan, cax in zip(data.keys(), axes):
+        print('  + %s' % chan)
+        # plot
+        isort = np.argsort(data[chan]['date'])
+        cax.plot(data[chan]['date'][isort], data[chan]['temp'][isort])
+        # format the x axis
+        cax.xaxis.set_major_formatter(xfmt)
+        cax.xaxis.set_major_locator(major)
+        cax.xaxis.set_minor_locator(minor)
+        cax.tick_params(axis='x', labelrotation=25)
+
+        # subplot setup
+        cax.set_ylabel('T (°C)')
+        cax.set_title(chan)
+        cax.grid()
+        cax.grid(which='minor', alpha=0.2)
+
+    # - show
+    plt.show()
+
+
+def main():
+    global CHANNELS_TO_PLOT, CHANNEL_HELP, SHOW_CHANNEL_LIST
+    # -- show channel list if asked
+    if SHOW_CHANNEL_LIST:
+        print(CHANNEL_HELP)
+        return
+
+    # -- list the log files
+    logfile_list = list_log_files()
+    print(' > Found %i files' % len(logfile_list))
+
+    # -- get requested data
+    data = read_all_files(logfile_list)
+
+    # -- plot
+    print(' > Plotting')
+    plot_data(data)
+
+
+# %% Main
+
+
+if __name__ == '__main__':
+    main()
