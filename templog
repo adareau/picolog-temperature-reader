@@ -20,8 +20,8 @@ from pathlib import Path
 
 # %% Settings
 # - paths
-ROOT = Path('.')
-LOG_DIR = ROOT / 'logs'
+
+LOG_DIR = Path('/') / 'mnt' / 'manip_E' / 'pico_temperature_logs'
 FILE_NAME_FMT = '%Y-%m-%d'
 FILE_EXT = '.hdf5'
 
@@ -46,7 +46,7 @@ parser = argparse.ArgumentParser(description=DESCRIPTION_STRING)
 
 # - date range
 group = parser.add_mutually_exclusive_group()
-group.add_argument("-w", "--week", action="store_true", help='last week (default)')
+group.add_argument("-w", "--week", action="store_true", help='last week (def)')
 group.add_argument("-m", "--month", action="store_true", help='last month')
 group.add_argument("-y", "--year", action="store_true", help='last year')
 group.add_argument("-a", "--all", action="store_true", help='show all logs')
@@ -63,6 +63,10 @@ parser.add_argument("-c", "--channels", nargs='+', type=int, default=[1, 2, 3],
 # - help
 parser.add_argument("-l", "--list", action="store_true",
                     help="list available channels")
+
+# - debug mode
+parser.add_argument("-d", "--debug", action="store_true",
+                    help="debug mode on")
 
 # - parse and analyse
 args = parser.parse_args()
@@ -83,6 +87,9 @@ CHANNELS_TO_PLOT = [CHANNEL_LIST[i] for i in args.channels]
 
 # - other
 SHOW_CHANNEL_LIST = args.list
+if args.debug:
+    LOG_DIR = Path('/') / 'home' / 'alex' / 'Recherche' / 'Programmation'
+    LOG_DIR = LOG_DIR / 'Python' / 'picolog-temperature-reader' / 'logs'
 
 # %% Functions
 
