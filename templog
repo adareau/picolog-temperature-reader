@@ -183,7 +183,7 @@ def plot_data(data):
 
     # - plot
     if DATE_RANGE == "w":
-        xfmt = md.DateFormatter('%m-%Y')
+        xfmt = md.DateFormatter('%d/%m %H:%M')
         major = md.DayLocator()
         minor = md.HourLocator()
     elif DATE_RANGE == 'm':
