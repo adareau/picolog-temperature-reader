@@ -111,7 +111,7 @@ def list_log_files():
     # - list files
     logfile_list = []
     for lfile in LOG_DIR.glob('*%s' % FILE_EXT):
-        lfile_date = dt.datetime.strptime(lfile.name, FILE_NAME_FMT + FILE_EXT)
+        lfile_date = dt.datetime.strptime(lfile.name[:10], FILE_NAME_FMT)
         if lfile_date > start_date:
             logfile_list.append(lfile)
 
